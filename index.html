@@ -1,0 +1,1128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}:root{padding-top:env(safe-area-inset-top,0px)}img{max-width:100%}</style>
+<title>Rent Ledger</title>
+<meta name="theme-color" content="#0f6b5c">
+<meta name="description" content="Free rent ledger for landlords: monthly rent, electricity and water bills, payments, WhatsApp bills and rent increase reminders.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: phone-first app shell. Sticky top bar (title, month, actions), one scrolling column of cards, fixed bottom tab bar; bills and flats open as bottom sheets (side panel on wide screens). */
+:root {
+  --bg: #edf1ef;
+  --surface: #ffffff;
+  --sunk: #e3e9e6;
+  --ink: #142320;
+  --muted: #5b6b67;
+  --line: #d6dedb;
+  --accent: #0f6b5c;
+  --accent-soft: #d5ebe5;
+  --accent-ink: #ffffff;
+  --hero: #0f4f45;
+  --hero-ink: #ecf7f3;
+  --hero-muted: #a9d3c8;
+  --meter: #a35d00;
+  --ok: #1d7a3a;
+  --ok-bg: #dff1e4;
+  --warn: #93560a;
+  --warn-bg: #fbeed6;
+  --due: #b3261e;
+  --due-bg: #fbe3e1;
+  --wa: #1f8f4e;
+  --wa-ink: #ffffff;
+  --focus: #2f7fd1;
+  --shadow: 0 1px 2px rgba(20, 35, 32, 0.06), 0 4px 14px rgba(20, 35, 32, 0.05);
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --nav-h: 64px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1513; --surface: #17201d; --sunk: #1f2a27; --ink: #e5ece9; --muted: #98aaa5; --line: #2b3834;
+  --accent: #45b8a0; --accent-soft: #1d3a34; --accent-ink: #062019; --hero: #123a33; --hero-ink: #e6f5f0; --hero-muted: #8fc4b7;
+  --meter: #e3a24a; --ok: #6fd08a; --ok-bg: #173323; --warn: #f0b860; --warn-bg: #3a2b12; --due: #ff8f87; --due-bg: #44201d;
+  --wa: #25a35b; --wa-ink: #ffffff; --focus: #7db6f0; --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0e1513; --surface: #17201d; --sunk: #1f2a27; --ink: #e5ece9; --muted: #98aaa5; --line: #2b3834;
+  --accent: #45b8a0; --accent-soft: #1d3a34; --accent-ink: #062019; --hero: #123a33; --hero-ink: #e6f5f0; --hero-muted: #8fc4b7;
+  --meter: #e3a24a; --ok: #6fd08a; --ok-bg: #173323; --warn: #f0b860; --warn-bg: #3a2b12; --due: #ff8f87; --due-bg: #44201d;
+  --wa: #25a35b; --wa-ink: #ffffff; --focus: #7db6f0; --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+
+/* App bar */
+.appbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 9; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.appbar-in { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; gap: 10px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.appbar h1 { font-size: 1.3rem; font-weight: 800; flex: 1; min-width: 0; }
+.appbar h1 small { display: block; font-family: var(--f-body); font-size: 0.7rem; font-weight: 500; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.month-pill { appearance: none; -webkit-appearance: none; background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2378918a' stroke-width='3'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center; border: 1px solid var(--line); border-radius: 999px; padding: 8px 32px 8px 14px; font-weight: 600; font-size: 0.9rem; max-width: 42vw; }
+.icon-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); display: grid; place-items: center; flex: none; }
+.icon-btn svg { width: 20px; height: 20px; }
+
+/* Screens */
+main { max-width: 1100px; margin: 0 auto; padding-block: 14px calc(var(--nav-h) + 28px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; }
+.screen { display: grid; gap: 14px; min-width: 0; }
+.section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.section-title h2 { font-size: 1.05rem; }
+.section-title span { color: var(--muted); font-size: 0.85rem; }
+
+/* Hero summary */
+.hero { background: var(--hero); color: var(--hero-ink); border-radius: 22px; padding: 18px 18px 16px; display: grid; gap: 14px; box-shadow: var(--shadow); }
+.hero-label { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hero-muted); }
+.hero-amt { font-family: var(--f-display); font-weight: 800; font-size: 2.3rem; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.hero-bar { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--hero-ink) 18%, transparent); overflow: hidden; }
+.hero-bar i { display: block; height: 100%; background: var(--hero-ink); border-radius: 4px; }
+.hero-row { display: flex; justify-content: space-between; gap: 10px; font-size: 0.85rem; color: var(--hero-muted); }
+.hero-row b { color: var(--hero-ink); font-weight: 600; }
+.hero-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.hero-stats div { background: color-mix(in srgb, var(--hero-ink) 9%, transparent); border-radius: 14px; padding: 10px; min-width: 0; }
+.hero-stats b { display: block; font-family: var(--f-num); font-size: 0.98rem; font-weight: 500; color: var(--hero-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-stats span { font-size: 0.72rem; color: var(--hero-muted); }
+
+/* Alerts */
+.alert { background: var(--warn-bg); border-radius: 16px; padding: 12px 14px; display: grid; gap: 8px; font-size: 0.9rem; }
+.alert b { color: var(--warn); }
+.alert .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Chips */
+.chips-scroll { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -4px; padding: 2px 4px; }
+.chips-scroll::-webkit-scrollbar { display: none; }
+.chip { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 14px; font-size: 0.86rem; font-weight: 500; color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.chip .ct { font-family: var(--f-num); font-size: 0.78rem; opacity: 0.75; margin-left: 4px; }
+.alert .chip { background: var(--surface); color: var(--ink); border-color: transparent; padding: 6px 12px; font-size: 0.82rem; }
+
+/* List cards */
+.list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); }
+.row { background: var(--surface); border-radius: 18px; padding: 14px; display: grid; gap: 10px; box-shadow: var(--shadow); cursor: pointer; min-width: 0; border: 1px solid transparent; transition: border-color .15s; }
+.row:hover { border-color: var(--line); }
+.row-top { display: flex; gap: 12px; align-items: flex-start; }
+.avatar { width: 42px; height: 42px; border-radius: 14px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-family: var(--f-display); font-weight: 700; font-size: 0.95rem; flex: none; }
+.avatar.vacant { background: var(--sunk); color: var(--muted); }
+.row-main { flex: 1; min-width: 0; }
+.row-title { font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-sub { color: var(--muted); font-size: 0.82rem; }
+.row-amt { text-align: right; flex: none; display: grid; gap: 4px; justify-items: end; }
+.row-amt .amt { font-family: var(--f-num); font-weight: 500; font-size: 1.05rem; }
+.row-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.meta { background: var(--sunk); border-radius: 8px; padding: 3px 8px; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+.meta b { color: var(--ink); font-weight: 500; font-family: var(--f-num); }
+.meta.warn { background: var(--warn-bg); color: var(--warn); }
+.meta.bad { background: var(--due-bg); color: var(--due); }
+.row-actions { display: flex; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 10px; }
+.row-actions .hint { margin: 0; }
+.pill { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+.pill.paid { background: var(--ok-bg); color: var(--ok); }
+.pill.part { background: var(--warn-bg); color: var(--warn); }
+.pill.due { background: var(--due-bg); color: var(--due); }
+.tag { display: inline-block; font-size: 0.68rem; font-weight: 600; padding: 1px 6px; border-radius: 6px; background: var(--sunk); color: var(--muted); margin-left: 6px; vertical-align: 2px; }
+.tag.leaving { background: var(--warn-bg); color: var(--warn); }
+.tag.new { background: var(--ok-bg); color: var(--ok); }
+.empty { padding: 36px 20px; text-align: center; color: var(--muted); background: var(--surface); border-radius: 18px; }
+#status.empty { background: transparent; }
+
+/* WhatsApp */
+.wa { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--wa); color: var(--wa-ink); border-radius: 12px; padding: 10px 16px; font-weight: 600; text-decoration: none; min-height: 44px; }
+.wa.small { padding: 6px 12px; min-height: 34px; border-radius: 10px; font-size: 0.85rem; }
+.wa svg { width: 16px; height: 16px; }
+.wa-missing { font-size: 0.8rem; color: var(--muted); }
+
+/* Buttons and forms */
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 10px 16px; border-radius: 12px; font-weight: 600; min-height: 44px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.block { width: 100%; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+input[type="text"], input[type="number"], input[type="date"], input[type="tel"], input[type="month"], input[type="file"], select { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 44px; font-size: 16px; min-width: 0; width: 100%; }
+input[type="number"], input[type="tel"] { font-family: var(--f-num); }
+.card { background: var(--surface); border-radius: 18px; padding: 16px; display: grid; gap: 12px; box-shadow: var(--shadow); min-width: 0; }
+.card h3 { font-size: 1rem; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 380px) { .grid2 { grid-template-columns: 1fr; } }
+.field { display: grid; gap: 5px; min-width: 0; }
+.field label { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+.hint { font-size: 0.8rem; color: var(--muted); margin: 0; }
+.confirm { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+details.card > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-family: var(--f-display); font-weight: 600; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::after { content: "+"; font-size: 1.4rem; color: var(--accent); line-height: 1; }
+details.card[open] > summary::after { content: "–"; }
+
+/* Sheet details */
+.calc { display: grid; gap: 6px; font-size: 0.95rem; }
+.calc div { display: flex; justify-content: space-between; gap: 10px; }
+.calc .tot { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 2px; font-weight: 600; }
+.calc .bal { font-size: 1.15rem; font-weight: 700; }
+.pay-list { display: grid; gap: 4px; }
+.pay-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 0.9rem; }
+.pay-row span { color: var(--muted); }
+.x { border: 0; background: var(--sunk); color: var(--muted); width: 34px; height: 34px; border-radius: 50%; font-size: 1.1rem; line-height: 1; flex: none; }
+pre.billtext { white-space: pre-wrap; font-family: var(--f-body); font-size: 0.9rem; line-height: 1.5; background: var(--ok-bg); color: var(--ink); border-radius: 14px 14px 14px 4px; padding: 12px 14px; margin: 0; user-select: all; }
+.linkish { border: 0; background: transparent; color: var(--accent); padding: 0; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; font-size: 0.85rem; }
+.occ { display: grid; gap: 2px; font-size: 0.9rem; }
+.occ div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px dashed var(--line); padding: 6px 0; flex-wrap: wrap; }
+.occ span { color: var(--muted); }
+.scroll { overflow-x: auto; }
+table.hist { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+.hist th, .hist td { padding: 8px 6px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.hist th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.hist th.l, .hist td.l { text-align: left; }
+.hist tbody tr { cursor: pointer; }
+.vacant { color: var(--muted); font-style: italic; }
+
+/* Bottom sheet */
+.scrim { position: fixed; inset: 0; background: rgba(8, 16, 14, 0.45); z-index: 20; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: calc(100% - 24px - env(safe-area-inset-top, 0px)); overflow-y: auto; overscroll-behavior: contain; background: var(--bg); z-index: 21; border-radius: 24px 24px 0 0; padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 12px; align-content: start; }
+.grabber { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 2px auto 4px; }
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; position: sticky; top: -8px; background: var(--bg); padding-block: 6px; z-index: 1; }
+.sheet-head h2 { font-size: 1.35rem; }
+.sheet-head p { margin: 2px 0 0; color: var(--muted); font-size: 0.88rem; }
+@media (min-width: 760px) {
+  .sheet { left: auto; top: 0; width: 460px; max-height: none; border-radius: 0; border-left: 1px solid var(--line); padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
+  .grabber { display: none; }
+}
+.sheet .card button[type="submit"] { width: 100%; }
+.menu-item { display: grid; gap: 2px; text-align: left; width: 100%; background: var(--surface); border: 0; border-radius: 16px; padding: 14px 16px; font-weight: 600; box-shadow: var(--shadow); min-height: 56px; }
+.menu-item small { font-weight: 400; color: var(--muted); font-size: 0.8rem; }
+.menu-item:disabled { opacity: 0.5; }
+
+/* Bottom tab bar */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--line); padding: 6px max(16px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.tabbar-in { max-width: 480px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tab { border: 0; background: transparent; display: grid; justify-items: center; gap: 2px; padding: 6px 0; border-radius: 14px; color: var(--muted); font-size: 0.75rem; font-weight: 600; min-height: 52px; }
+.tab svg { width: 22px; height: 22px; }
+.tab[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px; z-index: 30; font-size: 0.9rem; max-width: calc(100% - 32px); text-align: center; }
+@media (min-width: 760px) { body { font-size: 15px; } .hero { grid-template-columns: 1.2fr 1fr; align-items: end; } .hero-amt { font-size: 2.8rem; } }
+@media (prefers-reduced-motion: no-preference) {
+  .sheet { animation: rise .22s cubic-bezier(.2, .8, .2, 1); } @keyframes rise { from { transform: translateY(40px); opacity: .5; } }
+  .scrim { animation: fade .2s ease-out; } @keyframes fade { from { opacity: 0; } }
+}
+</style>
+</head>
+<body>
+
+
+<header class="appbar">
+  <div class="appbar-in">
+    <h1><small id="building-name">Rent Ledger</small><span id="screen-title">Ledger</span></h1>
+    <select id="month-select" class="month-pill" aria-label="Month"></select>
+    <button class="icon-btn" id="btn-menu" aria-label="Month actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <div id="status" class="empty">Loading the ledger…</div>
+
+  <section id="view-welcome" class="screen" hidden>
+    <div class="hero">
+      <div style="display:grid;gap:8px">
+        <div class="hero-label">Rent Ledger</div>
+        <div class="hero-amt" style="font-size:1.85rem;line-height:1.15">Monthly rent bills for your building, on your phone</div>
+        <div class="hero-row" style="display:block">Rent, electricity and water bills, payments, WhatsApp bills, tenant moves, security deposits and rent increase reminders.</div>
+      </div>
+      <div class="hero-stats">
+        <div><b>Free</b><span>No sign-up</span></div>
+        <div><b>Private</b><span>Data stays on this device</span></div>
+        <div><b>Offline</b><span>Works without internet</span></div>
+      </div>
+    </div>
+    <div class="alert" id="welcome-replace" hidden><span><b>You already have a building here.</b> Uploading a sheet or loading the sample replaces it. Download a backup from the ⋯ menu first if you want to keep it.</span><div class="chips"><button class="chip" id="btn-welcome-cancel">Back to my building</button></div></div>
+    <div class="alert" id="welcome-nosave" hidden><span><b>This browser isn't saving data</b>, possibly because it's in private mode. Open the page in a normal tab to keep your ledger.</span></div>
+    <div class="card">
+      <h3>1. Get the template</h3>
+      <p class="hint">One row per flat. Only Flat and Rent are required. Leave the tenant blank for a vacant flat. You can also upload your own sheet if its columns have names like Flat, Tenant, Rent, Water, Previous reading.</p>
+      <button class="btn block" id="btn-template" type="button">Download template (.xlsx)</button>
+    </div>
+    <form class="card" id="import-form">
+      <h3>2. Upload your sheet</h3>
+      <div class="grid2">
+        <div class="field"><label for="im-building">Building name</label><input type="text" id="im-building" placeholder="Sunrise Apartments"></div>
+        <div class="field"><label for="im-month">Billing month</label><input type="month" id="im-month"></div>
+      </div>
+      <div class="field"><label for="im-file">Sheet (.xlsx, .xls or .csv)</label><input type="file" id="im-file" accept=".xlsx,.xls,.csv" required></div>
+      <button class="btn primary block" type="submit">Upload and start</button>
+      <p class="hint" id="im-result" role="status"></p>
+    </form>
+    <div class="card">
+      <h3>Other ways to start</h3>
+      <button class="menu-item" id="btn-sample" type="button">Try it with sample data<small>Six example flats you can play with, then replace with your own</small></button>
+      <button class="menu-item" id="btn-empty" type="button">Start with an empty building<small>Add flats one by one on the Flats tab</small></button>
+      <button class="menu-item" id="btn-restore-w" type="button">Restore a backup<small>A .json backup downloaded from this app</small></button>
+    </div>
+  </section>
+
+  <section id="view-ledger" class="screen" hidden>
+    <div class="hero" id="hero"></div>
+    <div id="notices" style="display:grid;gap:10px"></div>
+    <div class="chips-scroll" id="filters" role="group" aria-label="Filter bills"></div>
+    <div class="list" id="rows"></div>
+  </section>
+
+  <section id="view-flats" class="screen" hidden>
+    <div class="hero" id="flat-hero"></div>
+    <div class="list" id="flat-rows"></div>
+    <details class="card" id="add-flat-wrap">
+      <summary>Add a flat</summary>
+      <form id="add-flat" style="display:grid;gap:12px">
+        <div class="grid2">
+          <div class="field"><label for="nf-label">Flat name or number</label><input type="text" id="nf-label" required placeholder="Flat 19"></div>
+          <div class="field"><label for="nf-type">Type</label><input type="text" id="nf-type" placeholder="2 BHK"></div>
+          <div class="field"><label for="nf-rent">Rent (Rs)</label><input type="number" id="nf-rent" min="0" required inputmode="numeric"></div>
+          <div class="field"><label for="nf-water">Water (Rs)</label><input type="number" id="nf-water" min="0" value="0" inputmode="numeric"></div>
+          <div class="field"><label for="nf-rate">Rate (Rs/unit)</label><input type="number" id="nf-rate" min="0" step="0.5" value="8" inputmode="decimal"></div>
+          <div class="field"><label for="nf-reading">Meter reading now</label><input type="number" id="nf-reading" min="0" placeholder="Blank if no meter" inputmode="numeric"></div>
+          <div class="field"><label for="nf-tenant">Tenant (optional)</label><input type="text" id="nf-tenant" placeholder="Blank if vacant"></div>
+          <div class="field"><label for="nf-phone">Tenant WhatsApp</label><input type="tel" id="nf-phone" placeholder="98765 43210"></div>
+          <div class="field"><label for="nf-deposit">Security deposit (Rs)</label><input type="number" id="nf-deposit" min="0" inputmode="numeric"></div>
+          <div class="field"><label for="nf-start">Tenant start date</label><input type="date" id="nf-start"></div>
+          <div class="field"><label for="nf-from">First month billed</label><select id="nf-from"></select></div>
+        </div>
+        <button class="btn primary block" type="submit">Add flat</button>
+      </form>
+    </details>
+  </section>
+</main>
+
+<nav class="tabbar" id="tabbar" aria-label="Sections">
+  <div class="tabbar-in">
+    <button class="tab" id="tab-ledger" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Bills</button>
+    <button class="tab" id="tab-flats" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/></svg>Flats</button>
+  </div>
+</nav>
+
+<div id="sheet-root"></div>
+<div id="toast" class="toast" hidden></div>
+<input type="file" id="restore-file" accept=".json,application/json" hidden>
+
+<script>
+(() => {
+  // Data: flats/{id} hold the fixed flat and its tenants over time (occupants: [{name, from, to}], months inclusive).
+  // bills/{month}_{flatId} hold one month of one flat, with the tenant's name as billed that month.
+  const S = { db: null, canWrite: null, months: [], month: null, flats: {}, bills: {}, view: "ledger", filter: "all", open: null, confirmNext: false, unsubBills: null, flatHist: [], unsubHist: null, ready: { meta: false, flats: false, bills: false } };
+  const $ = (id) => document.getElementById(id);
+  const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+  const rs = (n) => "₹" + inr.format(Math.round((n || 0) * 100) / 100);
+  const signedRs = (n) => (n < 0 ? "-" + rs(-n) : rs(n));
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = (v) => (v === "" || v === null || v === undefined || isNaN(+v) ? null : +v);
+  const monthLabel = (m) => { const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" }); };
+  const shortMonth = (m) => { const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" }); };
+  const nextMonth = (m) => { let [y, mo] = m.split("-").map(Number); mo++; if (mo > 12) { mo = 1; y++; } return y + "-" + String(mo).padStart(2, "0"); };
+  const prevMonth = (m) => { let [y, mo] = m.split("-").map(Number); mo--; if (mo < 1) { mo = 12; y--; } return y + "-" + String(mo).padStart(2, "0"); };
+  const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  const latest = () => S.months[S.months.length - 1];
+  const dis = () => (S.canWrite === false ? " disabled" : "");
+
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2600); }
+
+  function occupantFor(flat, m) { return (flat.occupants || []).find((o) => o.from <= m && (!o.to || o.to >= m)) || null; }
+  // WhatsApp numbers are stored as digits; a 10-digit Indian mobile gets the 91 country code in the link.
+  const cleanPhone = (v) => String(v || "").replace(/[^0-9]/g, "");
+  const waDigits = (p) => { const d = cleanPhone(p); return d.length === 10 ? "91" + d : d.length === 11 && d[0] === "0" ? "91" + d.slice(1) : d; };
+  function occupantOfBill(b) { const f = b && S.flats[b.flatId]; return f && (f.occupants || []).find((o) => o.name === b.tenantName && o.from <= b.month && (!o.to || o.to >= b.month)); }
+  function waLink(b, c, small) {
+    const o = occupantOfBill(b);
+    if (!o?.phone) return small ? '<span class="wa-missing">Add WhatsApp number</span>' : "";
+    return `<a class="wa${small ? " small" : ""}" href="https://wa.me/${waDigits(o.phone)}?text=${encodeURIComponent(billText(b, c))}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.2 2.2 2.2 0 0 0 .1-1.2c0-.1-.2-.2-.5-.3z"/></svg>${small ? "Send" : "Send on WhatsApp"}</a>`;
+  }
+  // Rent increase reminders: each tenant's start date, plus one year per revision already recorded.
+  const isoDate = (dt) => dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+  const addYears = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); return isoDate(new Date(y + n, m - 1, d)); };
+  const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  const daysUntil = (iso) => Math.round((new Date(iso + "T00:00:00") - new Date(today() + "T00:00:00")) / 86400000);
+  function nextRevision(o) { if (!o?.startDate) return null; return addYears(o.lastRevised || o.startDate, 1); }
+  function revisionAlerts() {
+    return flatsSorted().map((f) => { const o = currentOccupant(f), due = nextRevision(o); return due ? { f, o, due, days: daysUntil(due), years: Number(due.slice(0, 4)) - Number(o.startDate.slice(0, 4)) } : null; })
+      .filter((a) => a && a.days <= 30).sort((a, b) => a.days - b.days);
+  }
+  const whenText = (a) => (a.days < 0 ? `${a.years} yr done ${fmtDate(a.due)}, overdue` : a.days === 0 ? `${a.years} yr today` : `${a.years} yr on ${fmtDate(a.due)}`);
+  function currentOccupant(flat) { const os = flat.occupants || []; const o = os[os.length - 1]; return o && !o.to ? o : null; }
+  const flatName = (f) => f ? f.label || "Flat " + f.no : "Flat";
+  const flatsSorted = () => Object.values(S.flats).sort((a, b) => (a.no || 999) - (b.no || 999));
+
+  // One bill: total = previous balance + rent + water + electricity + other charges.
+  function calc(b) {
+    const hasMeter = b.hasMeter !== false;
+    const prev = num(b.prevReading), curr = num(b.currReading);
+    const units = hasMeter && prev !== null && curr !== null ? Math.max(0, curr - prev) : 0;
+    const rate = num(b.rate) || 0;
+    const electricity = units * rate;
+    const rent = num(b.rent) || 0, water = num(b.water) || 0, other = num(b.adjustment) || 0, prevBalance = num(b.prevBalance) || 0;
+    const total = prevBalance + rent + water + electricity + other;
+    const paid = (b.payments || []).reduce((s, p) => s + (num(p.amount) || 0), 0);
+    const balance = total - paid;
+    const readingMissing = hasMeter && curr === null;
+    const status = balance <= 0 ? "paid" : paid > 0 ? "part" : "due";
+    return { hasMeter, units, rate, electricity, rent, water, other, prevBalance, total, paid, balance, readingMissing, status };
+  }
+  const statusLabel = (c) => (c.status === "paid" ? (c.balance < 0 ? "Paid extra" : "Paid") : c.status === "part" ? "Part paid" : "Due");
+  const billsSorted = () => Object.values(S.bills).sort((a, b) => (S.flats[a.flatId]?.no || 999) - (S.flats[b.flatId]?.no || 999));
+
+  function newBill(flat, month, tenantName, prevBalance, prevReading) {
+    return { month, flatId: flat._id, tenantName, hasMeter: flat.hasMeter !== false, prevBalance: Math.round((prevBalance || 0) * 100) / 100,
+      prevReading: flat.hasMeter !== false ? prevReading ?? null : null, currReading: null, rate: flat.rate ?? 8, rent: flat.rent ?? 0, water: flat.water ?? 0,
+      adjustment: 0, adjustmentLabel: "", payments: [] };
+  }
+
+  // ---------- rendering ----------
+  function render() {
+    const loaded = S.ready.meta && S.ready.flats;
+    const welcome = S.ready.meta && (!S.meta || S.welcome);
+    $("status").hidden = (loaded && !!S.db) || welcome;
+    $("view-welcome").hidden = !welcome;
+    $("tabbar").hidden = welcome;
+    $("month-select").hidden = welcome || !S.months.length;
+    $("btn-menu").hidden = !S.meta;
+    $("building-name").textContent = S.meta?.building || "Rent Ledger";
+    document.title = S.meta?.building ? S.meta.building + " · Rent Ledger" : "Rent Ledger";
+    $("view-ledger").hidden = welcome || !loaded || S.view !== "ledger";
+    $("view-flats").hidden = welcome || !loaded || S.view !== "flats";
+    if (welcome) {
+      $("screen-title").textContent = S.meta ? "Upload a sheet" : "Welcome";
+      $("welcome-replace").hidden = !S.meta;
+      $("welcome-nosave").hidden = Store.isSaving();
+      if (!$("im-month").value) $("im-month").value = today().slice(0, 7);
+      if (!$("im-building").value && S.meta?.building && !S.meta.sample) $("im-building").value = S.meta.building;
+      renderSheet();
+      return;
+    }
+    $("tab-ledger").setAttribute("aria-pressed", S.view === "ledger");
+    $("tab-flats").setAttribute("aria-pressed", S.view === "flats");
+    $("screen-title").textContent = S.view === "ledger" ? "Bills" : "Flats";
+    const opts = S.months.slice().reverse().map((m) => `<option value="${m}"${m === S.month ? " selected" : ""}>${shortMonth(m)}</option>`).join("");
+    if ($("month-select").innerHTML !== opts) $("month-select").innerHTML = opts;
+    const fromOpts = monthChoices().map((m) => `<option value="${m}"${m === latest() ? " selected" : ""}>${monthLabel(m)}</option>`).join("");
+    if ($("nf-from").innerHTML !== fromOpts) $("nf-from").innerHTML = fromOpts;
+    if (!loaded) return;
+    renderLedger();
+    renderFlats();
+    renderSheet();
+  }
+  const monthChoices = () => (latest() ? [...S.months, nextMonth(latest())] : [today().slice(0, 7)]);
+  const initials = (n) => String(n || "?").trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+
+  function menuSheet() {
+    const l = latest(), d = dis();
+    const startBlock = !l ? "" : S.confirmNext
+      ? `<div class="card"><h3>Start ${monthLabel(nextMonth(l))}?</h3><p class="hint" style="font-size:0.9rem">Every occupied flat gets a new bill. Each tenant's ${monthLabel(l)} balance and closing meter reading carry forward.</p><div class="confirm"><button class="btn primary" id="btn-next-yes"${d}>Start ${shortMonth(nextMonth(l))}</button><button class="btn" id="btn-next-no">Cancel</button></div></div>`
+      : `<button class="menu-item" id="btn-next"${d}>Start ${monthLabel(nextMonth(l))}<small>Carries balances and meter readings forward</small></button>`;
+    return `<div class="scrim" data-close="1"></div>
+    <aside class="sheet" role="dialog" aria-label="Month actions"><div class="grabber"></div>
+      <div class="sheet-head"><div><h2>${S.month ? monthLabel(S.month) : "Month"}</h2><p>Month actions</p></div><button class="x" data-close="1" aria-label="Close">×</button></div>
+      ${startBlock}
+      <button class="menu-item" id="btn-export">Export ${S.month ? shortMonth(S.month) : ""} as CSV<small>Opens in Excel or Google Sheets</small></button>
+      <div class="card"><div class="field"><label for="m-building">Building name</label><input type="text" id="m-building" value="${esc(S.meta?.building || "")}"></div></div>
+      <button class="menu-item" id="btn-backup">Download a backup<small>Your data lives only on this device. Keep a backup to move phones or recover it.</small></button>
+      <button class="menu-item" id="btn-restore">Restore a backup<small>Replaces the data on this device</small></button>
+      <button class="menu-item" data-welcome="1">Upload a new sheet<small>Start again from a filled template</small></button>
+      ${S.confirmErase ? `<div class="card"><h3>Erase everything on this device?</h3><p class="hint">All flats, bills and payments are removed. You can only get them back from a backup.</p><div class="confirm"><button class="btn" id="btn-erase-yes" style="color:var(--due)">Erase</button><button class="btn" id="btn-erase-no">Cancel</button></div></div>` : `<button class="menu-item" id="btn-erase" style="color:var(--due)">Erase all data<small>Removes everything stored on this device</small></button>`}
+      <p class="hint">Install it like an app: in Chrome tap ⋮ then Add to Home screen. On iPhone, open it in Safari, tap Share, then Add to Home Screen.</p>
+    </aside>`;
+  }
+
+  function renderLedger() {
+    const cs = billsSorted().map((b) => [b, calc(b)]);
+    const sum = (k) => cs.reduce((s, [, c]) => s + c[k], 0);
+    const billed = sum("total"), paid = sum("paid"), bal = sum("balance"), units = sum("units");
+    const open = cs.filter(([, c]) => c.balance > 0).length;
+    const pct = billed > 0 ? Math.min(100, (paid / billed) * 100) : 0;
+    $("hero").innerHTML = `
+      <div style="display:grid;gap:6px"><div class="hero-label">Still to collect · ${S.month ? monthLabel(S.month) : ""}</div><div class="hero-amt">${rs(Math.max(0, bal))}</div>
+        <div class="hero-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+        <div class="hero-row"><span>Collected <b>${rs(paid)}</b></span><span>of <b>${rs(billed)}</b></span></div></div>
+      <div class="hero-stats">
+        <div><b>${cs.length - open}/${cs.length}</b><span>Paid up</span></div>
+        <div><b>${inr.format(units)}</b><span>Units used</span></div>
+        <div><b>${rs(sum("electricity"))}</b><span>Electricity</span></div>
+      </div>`;
+
+    const m = S.month;
+    const vacant = flatsSorted().filter((f) => m && !occupantFor(f, m) && !S.bills[m + "_" + f._id]);
+    const leaving = cs.filter(([b]) => (S.flats[b.flatId]?.occupants || []).some((o) => o.name === b.tenantName && o.to === m));
+    const missing = cs.filter(([, c]) => c.readingMissing).length;
+    let notes = "";
+    if (S.meta?.sample) notes += `<div class="alert"><span><b>This is sample data.</b> Play with it, then load your own building.</span><div class="chips"><button class="chip" data-welcome="1">Use my own sheet</button></div></div>`;
+    const alerts = revisionAlerts();
+    if (alerts.length) notes += `<div class="alert"><span><b>Rent increase due.</b> A year is up, or nearly up, for:</span><div class="chips">${alerts.map((a) => `<button class="chip" data-openflat="${esc(a.f._id)}">${esc(a.o.name)} · ${whenText(a)}</button>`).join("")}</div></div>`;
+    if (leaving.length) notes += `<div class="alert"><span><b>Moving out after ${monthLabel(m)}:</b> ${leaving.map(([b, c]) => esc(b.tenantName) + (c.balance > 0 ? " (owes " + rs(c.balance) + ")" : "")).join(", ")}</span></div>`;
+    if (vacant.length) notes += `<div class="alert"><span><b>Vacant this month:</b> ${vacant.map((f) => esc(flatName(f))).join(", ")}</span><div class="chips"><button class="chip" data-goflats="1">Add a tenant</button></div></div>`;
+    const noStart = flatsSorted().filter((f) => currentOccupant(f) && !currentOccupant(f).startDate).length;
+    if (noStart) notes += `<div class="alert"><span><b>${noStart} tenant${noStart > 1 ? "s have" : " has"} no start date.</b> Add one on each flat to get rent increase reminders.</span></div>`;
+    $("notices").innerHTML = notes;
+
+    const count = (k) => cs.filter(([, c]) => (k === "all" ? true : k === "reading" ? c.readingMissing : c.status === k)).length;
+    const filters = [["all", "All"], ["due", "Due"], ["part", "Part paid"], ["paid", "Paid"], ...(missing ? [["reading", "No reading"]] : [])];
+    $("filters").innerHTML = filters.map(([k, l]) => `<button class="chip" data-filter="${k}" aria-pressed="${S.filter === k}">${l}<span class="ct">${count(k)}</span></button>`).join("");
+
+    if (!S.ready.bills) { $("rows").innerHTML = `<div class="empty">Loading bills…</div>`; return; }
+    if (!cs.length) { $("rows").innerHTML = `<div class="empty">No bills for this month yet. Add a flat on the Flats tab, or start the month from the ⋯ menu.</div>`; return; }
+    const shown = cs.filter(([, c]) => S.filter === "all" || (S.filter === "reading" ? c.readingMissing : c.status === S.filter));
+    $("rows").innerHTML = shown.map(([b, c]) => {
+      const f = S.flats[b.flatId];
+      const occ = occupantOfBill(b);
+      const tag = occ && occ.to === b.month ? '<span class="tag leaving">Leaving</span>' : occ && occ.from === b.month && (f?.occupants || []).indexOf(occ) > 0 ? '<span class="tag new">New</span>' : "";
+      const amt = c.paid ? c.balance : c.total;
+      const meta = [
+        `<span class="meta">Rent <b>${inr.format(c.rent)}</b></span>`,
+        c.hasMeter ? (c.readingMissing ? `<span class="meta warn">Reading pending</span>` : `<span class="meta">${inr.format(c.units)} units <b>${inr.format(c.electricity)}</b></span>`) : "",
+        c.water ? `<span class="meta">Water <b>${inr.format(c.water)}</b></span>` : "",
+        c.prevBalance ? `<span class="meta${c.prevBalance > 0 ? " bad" : ""}">${c.prevBalance > 0 ? "Prev due" : "Prev extra"} <b>${inr.format(Math.abs(c.prevBalance))}</b></span>` : "",
+        c.paid ? `<span class="meta">Paid <b>${inr.format(c.paid)}</b></span>` : "",
+      ].join("");
+      return `<article class="row" data-bill="${esc(b._id)}" tabindex="0">
+        <div class="row-top">
+          <div class="avatar">${esc(initials(b.tenantName))}</div>
+          <div class="row-main"><div class="row-title">${esc(b.tenantName)}${tag}</div><div class="row-sub">${esc(flatName(f))}${f?.unitType ? " · " + esc(f.unitType) : ""}</div></div>
+          <div class="row-amt"><span class="amt">${c.balance < 0 ? "-" : ""}${rs(Math.abs(amt))}</span><span class="pill ${c.status}">${statusLabel(c)}</span></div>
+        </div>
+        <div class="row-meta">${meta}</div>
+        <div class="row-actions"><span class="hint">${c.paid ? "Balance after payments" : "Total this month"}</span>${waLink(b, c, true)}</div>
+      </article>`;
+    }).join("") || `<div class="empty">No flats match this filter.</div>`;
+  }
+
+  function renderFlats() {
+    const fs = flatsSorted();
+    const occ = fs.filter((f) => currentOccupant(f));
+    const deps = occ.map((f) => currentOccupant(f).deposit).filter((v) => v != null);
+    const rentRoll = occ.reduce((s, f) => s + (f.rent || 0), 0);
+    $("flat-hero").innerHTML = `
+      <div style="display:grid;gap:6px"><div class="hero-label">Monthly rent from occupied flats</div><div class="hero-amt">${rs(rentRoll)}</div></div>
+      <div class="hero-stats">
+        <div><b>${occ.length}/${fs.length}</b><span>Occupied</span></div>
+        <div><b>${rs(deps.reduce((a, b) => a + b, 0))}</b><span>Security held</span></div>
+        <div><b>${revisionAlerts().length}</b><span>Increases due</span></div>
+      </div>`;
+    $("flat-rows").innerHTML = fs.map((f) => {
+      const o = currentOccupant(f), due = nextRevision(o), n = due ? daysUntil(due) : null;
+      const meta = o ? [
+        o.phone ? `<span class="meta">WhatsApp <b>${esc(o.phone)}</b></span>` : `<span class="meta">+ WhatsApp</span>`,
+        o.deposit != null ? `<span class="meta">Security <b>${inr.format(o.deposit)}</b></span>` : `<span class="meta">+ Security</span>`,
+        due ? `<span class="meta${n < 0 ? " bad" : n <= 30 ? " warn" : ""}">Increase <b>${fmtDate(due)}</b></span>` : `<span class="meta">+ Start date</span>`,
+      ].join("") : `<span class="meta">Vacant</span>`;
+      return `<article class="row" data-flat="${esc(f._id)}" tabindex="0">
+        <div class="row-top">
+          <div class="avatar${o ? "" : " vacant"}">${esc(String(f.no ?? "").padStart(2, "0"))}</div>
+          <div class="row-main"><div class="row-title">${o ? esc(o.name) : '<span class="vacant">Vacant</span>'}</div><div class="row-sub">${esc(flatName(f))}${f.unitType ? " · " + esc(f.unitType) : ""}${o ? " · since " + (o.startDate ? fmtDate(o.startDate) : shortMonth(o.from)) : ""}</div></div>
+          <div class="row-amt"><span class="amt">${rs(f.rent ?? 0)}</span><span class="hint">per month</span></div>
+        </div>
+        <div class="row-meta">${meta}</div>
+      </article>`;
+    }).join("") || `<div class="empty">No flats yet. Add the first one below.</div>`;
+  }
+
+  function billText(b, c) {
+    const f = S.flats[b.flatId];
+    // Vinay's message format: header, month, then one line per charge, then the total due.
+    const r = (n) => "₹" + inr.format(Math.round(Math.abs(n || 0) * 100) / 100);
+    const L = [`Rent Bill - ${b.tenantName} (${flatName(f)})`, `Month: ${monthLabel(b.month)}`, ""];
+    L.push(`Rent: ${r(c.rent)}`);
+    if (c.water) L.push(`Water: ${r(c.water)}`);
+    if (c.hasMeter) L.push(c.readingMissing ? `Electricity: reading pending` : `Electricity: ${inr.format(c.units)} units x Rs.${inr.format(c.rate)} = ${r(c.electricity)}`);
+    if (c.other) L.push(`${b.adjustmentLabel || "Other charges"}: ${c.other < 0 ? "-" : ""}${r(c.other)}`);
+    if (c.prevBalance > 0) L.push(`Previous Balance: ${r(c.prevBalance)}`);
+    if (c.prevBalance < 0) L.push(`Previous Balance: -${r(c.prevBalance)} (paid extra)`);
+    L.push("");
+    if (!c.paid) L.push(c.total > 0 ? `Total Amount: ${r(c.total)} due` : `Total Amount: Nil${c.total < 0 ? " (" + r(c.total) + " paid extra)" : ""}`);
+    else {
+      L.push(`Total Amount: ${r(c.total)}`, `Paid: ${r(c.paid)}`);
+      L.push(c.balance > 0 ? `Balance: ${r(c.balance)} due` : c.balance < 0 ? `Balance: Nil (${r(c.balance)} paid extra)` : `Balance: Nil (fully paid)`);
+    }
+    return L.join("\n");
+  }
+
+  function renderSheet() {
+    const root = $("sheet-root");
+    const keep = document.activeElement && root.contains(document.activeElement) ? document.activeElement.id : null;
+    if (S.open?.kind === "bill" && S.bills[S.open.id]) root.innerHTML = billSheet(S.bills[S.open.id]);
+    else if (S.open?.kind === "flat" && S.flats[S.open.id]) root.innerHTML = flatSheet(S.flats[S.open.id]);
+    else if (S.open?.kind === "menu") root.innerHTML = menuSheet();
+    else { root.innerHTML = ""; return; }
+    if (keep && $(keep)) $(keep).focus();
+  }
+
+  function billSheet(b) {
+    const c = calc(b), f = S.flats[b.flatId], d = dis();
+    const pays = (b.payments || []).map((p, i) => `<div class="pay-row"><div><b class="num">${rs(p.amount)}</b> <span>${esc(p.date || "")} · ${esc(p.mode || "")}${p.note ? " · " + esc(p.note) : ""}</span></div>${S.canWrite !== false ? `<button class="x" data-delpay="${i}" aria-label="Remove payment">×</button>` : ""}</div>`).join("") || `<p class="hint">No payments recorded yet.</p>`;
+    return `<div class="scrim" data-close="1"></div>
+    <aside class="sheet" role="dialog" aria-label="Bill for ${esc(b.tenantName)}"><div class="grabber"></div>
+      <div class="sheet-head"><div><h2>${esc(b.tenantName)}</h2><p>${esc(flatName(f))}${f?.unitType ? " · " + esc(f.unitType) : ""} · ${monthLabel(b.month)} · <span class="pill ${c.status}">${statusLabel(c)}</span></p><p><button class="linkish" data-openflat="${esc(b.flatId)}">See this flat's month-by-month record</button></p></div><button class="x" data-close="1" aria-label="Close">×</button></div>
+      <div class="card"><div class="calc">
+        ${c.prevBalance ? `<div><span>${c.prevBalance < 0 ? "Paid extra last month" : "Previous balance due"}</span><span class="num">${signedRs(c.prevBalance)}</span></div>` : ""}
+        <div><span>Rent</span><span class="num">${rs(c.rent)}</span></div>
+        ${c.hasMeter ? `<div><span>Electricity (${inr.format(c.units)} × Rs ${inr.format(c.rate)})</span><span class="num">${rs(c.electricity)}</span></div>` : ""}
+        <div><span>Water</span><span class="num">${rs(c.water)}</span></div>
+        ${c.other ? `<div><span>${esc(b.adjustmentLabel || "Other charges")}</span><span class="num">${rs(c.other)}</span></div>` : ""}
+        <div class="tot"><span>Total</span><span class="num">${rs(c.total)}</span></div>
+        <div><span>Paid</span><span class="num">${rs(c.paid)}</span></div>
+        <div class="bal"><span>${c.balance < 0 ? "Paid extra" : "Balance due"}</span><span class="num">${rs(Math.abs(c.balance))}</span></div>
+      </div></div>
+      <form class="card" id="pay-form">
+        <h3>Record a payment</h3>
+        <div class="grid2">
+          <div class="field"><label for="pay-amount">Amount (Rs)</label><input type="number" id="pay-amount" min="1" step="1" value="${c.balance > 0 ? Math.round(c.balance) : ""}" required${d}></div>
+          <div class="field"><label for="pay-date">Date</label><input type="date" id="pay-date" value="${today()}"${d}></div>
+          <div class="field"><label for="pay-mode">Mode</label><select id="pay-mode"${d}><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
+          <div class="field"><label for="pay-note">Note</label><input type="text" id="pay-note" placeholder="Optional"${d}></div>
+        </div>
+        <div><button class="btn primary" type="submit"${d}>Add payment</button></div>
+        <div class="pay-list">${pays}</div>
+      </form>
+      <div class="card">
+        <h3>Charges this month</h3>
+        <div class="grid2">
+          ${c.hasMeter ? `
+          <div class="field"><label for="b-prev">Previous reading</label><input type="number" id="b-prev" data-bf="prevReading" value="${b.prevReading ?? ""}"${d}></div>
+          <div class="field"><label for="b-curr">Current reading</label><input type="number" id="b-curr" data-bf="currReading" value="${b.currReading ?? ""}" placeholder="Enter reading"${d}></div>
+          <div class="field"><label for="b-rate">Rate (Rs/unit)</label><input type="number" id="b-rate" data-bf="rate" step="0.5" value="${b.rate ?? 0}"${d}></div>` : ""}
+          <div class="field"><label for="b-rent">Rent (Rs)</label><input type="number" id="b-rent" data-bf="rent" value="${b.rent ?? 0}"${d}></div>
+          <div class="field"><label for="b-water">Water (Rs)</label><input type="number" id="b-water" data-bf="water" value="${b.water ?? 0}"${d}></div>
+          <div class="field"><label for="b-prevbal">Previous balance (Rs, minus = paid extra)</label><input type="number" id="b-prevbal" data-bf="prevBalance" value="${b.prevBalance ?? 0}"${d}></div>
+          <div class="field"><label for="b-adj">Other charges (Rs)</label><input type="number" id="b-adj" data-bf="adjustment" value="${b.adjustment ?? 0}"${d}></div>
+          <div class="field"><label for="b-adjlabel">Other charges label</label><input type="text" id="b-adjlabel" data-bf="adjustmentLabel" value="${esc(b.adjustmentLabel || "")}" placeholder="e.g. Repair, deposit"${d}></div>
+        </div>
+        <p class="hint">Changes save as you leave each field.</p>
+      </div>
+      <div class="card">
+        <h3>Bill to send</h3>
+        <pre class="billtext" id="billtext">${esc(billText(b, c))}</pre>
+        <div class="confirm">${waLink(b, c, false)}<button class="btn" id="btn-copy" type="button">Copy bill</button></div>
+        <div class="field"><label for="b-phone">${esc(b.tenantName)}'s WhatsApp number</label><input type="tel" id="b-phone" value="${esc(occupantOfBill(b)?.phone || "")}" placeholder="98765 43210"${d}></div>
+        <p class="hint">Send on WhatsApp opens a chat with this number and the bill already typed. You press send in WhatsApp.</p>
+      </div>
+    </aside>`;
+  }
+
+  function flatSheet(f) {
+    const d = dis(), o = currentOccupant(f), choices = monthChoices();
+    const lastOut = (f.occupants || []).slice(-1)[0];
+    const moveInDefault = o ? nextMonth(latest() || o.from) : lastOut?.to ? nextMonth(lastOut.to) : latest();
+    const inChoices = [...new Set([...choices, moveInDefault])].filter(Boolean).sort();
+    const hist = S.flatHist.slice().sort((a, b) => (a.month < b.month ? 1 : -1));
+    const histRows = hist.map((b) => { const c = calc(b); return `<tr data-bill="${esc(b._id)}" data-histmonth="${b.month}"><td class="l">${shortMonth(b.month)}</td><td class="l">${esc(b.tenantName)}</td><td class="num">${inr.format(c.total)}</td><td class="num">${inr.format(c.paid)}</td><td class="num">${inr.format(c.balance)}</td></tr>`; }).join("");
+    const occ = (f.occupants || []).slice().reverse().map((x) => `<div><b>${esc(x.name)}</b><span>${x.deposit != null ? "Security " + rs(x.deposit) + " · " : ""}${x.phone ? esc(x.phone) + " · " : ""}${shortMonth(x.from)} to ${x.to ? shortMonth(x.to) : "now"}</span></div>`).join("") || `<p class="hint">No tenants recorded yet.</p>`;
+    return `<div class="scrim" data-close="1"></div>
+    <aside class="sheet" role="dialog" aria-label="${esc(flatName(f))}"><div class="grabber"></div>
+      <div class="sheet-head"><div><h2>${esc(flatName(f))}</h2><p>${esc(f.unitType || "")} · ${o ? "Tenant: " + esc(o.name) : "Vacant"}</p></div><button class="x" data-close="1" aria-label="Close">×</button></div>
+      <div class="card">
+        <h3>Month by month</h3>
+        ${hist.length ? `<div class="scroll"><table class="hist"><thead><tr><th class="l">Month</th><th class="l">Tenant</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${histRows}</tbody></table></div>` : `<p class="hint">Loading this flat's bills…</p>`}
+      </div>
+      <div class="card">
+        <h3>Tenants in this flat</h3>
+        <div class="occ">${occ}</div>
+        ${o ? `<div class="field"><label for="f-start">${esc(o.name)}'s start date</label><input type="date" id="f-start" value="${esc(o.startDate || "")}"${d}></div>` : ""}
+        ${o ? `<div class="field"><label for="f-deposit">${esc(o.name)}'s security deposit (Rs)</label><input type="number" id="f-deposit" min="0" value="${o.deposit ?? ""}" placeholder="Amount paid"${d}></div>` : ""}
+        ${o ? `<div class="field"><label for="f-phone">${esc(o.name)}'s WhatsApp number</label><input type="tel" id="f-phone" value="${esc(o.phone || "")}" placeholder="98765 43210"${d}></div>` : ""}
+      </div>
+      ${o && nextRevision(o) ? (() => { const due = nextRevision(o), n = daysUntil(due), hist = (o.rentHistory || []).slice().reverse();
+        return `<form class="card" id="rev-form">
+        <h3>Rent increase</h3>
+        <p class="hint" style="font-size:0.9rem;color:var(--ink)">${n < 0 ? `Due since <b>${fmtDate(due)}</b> (${Number(due.slice(0, 4)) - Number(o.startDate.slice(0, 4))} year${due.slice(0, 4) - o.startDate.slice(0, 4) > 1 ? "s" : ""} completed).` : `Next increase due on <b>${fmtDate(due)}</b>${n <= 30 ? `, in ${n} day${n === 1 ? "" : "s"}` : ""}.`} Current rent is ${rs(f.rent)}.</p>
+        <div class="grid2"><div class="field"><label for="rev-rent">New rent (Rs)</label><input type="number" id="rev-rent" value="${f.rent ?? 0}" min="0"${d}></div></div>
+        <div><button class="btn primary" type="submit"${d}>Record rent increase</button></div>
+        <p class="hint">The new rent applies from the next month you start, and the next reminder moves a year ahead. To change a bill already made, open that bill.</p>
+        ${hist.length ? `<div class="occ">${hist.map((h) => `<div><span>${fmtDate(h.date)}</span><b class="num">${rs(h.from)} → ${rs(h.to)}</b></div>`).join("")}</div>` : ""}
+      </form>`; })() : ""}
+      ${o ? `<form class="card" id="moveout-form">
+        <h3>${esc(o.name)} is moving out</h3>
+        <div class="field"><label for="mo-month">Last month they pay for</label><select id="mo-month"${d}>${choices.filter((m) => m >= o.from).map((m) => `<option value="${m}"${m === latest() ? " selected" : ""}>${monthLabel(m)}</option>`).join("")}</select></div>
+        <p class="hint">Their bills up to that month stay under their name. From the month after, the flat is vacant until a new tenant moves in.${o.deposit != null ? ` Security deposit held: <b>${rs(o.deposit)}</b>.` : ""}</p>
+        <div><button class="btn" type="submit"${d}>Record move-out</button></div>
+      </form>` : ""}
+      <form class="card" id="movein-form">
+        <h3>New tenant moving in</h3>
+        <div class="grid2">
+          <div class="field"><label for="mi-name">Name</label><input type="text" id="mi-name" required${d}></div>
+          <div class="field"><label for="mi-deposit">Security deposit (Rs)</label><input type="number" id="mi-deposit" min="0"${d}></div>
+          <div class="field"><label for="mi-start">Start date</label><input type="date" id="mi-start"${d}></div>
+          <div class="field"><label for="mi-phone">WhatsApp number</label><input type="tel" id="mi-phone" placeholder="98765 43210"${d}></div>
+          <div class="field"><label for="mi-from">First month they pay for</label><select id="mi-from"${d}>${inChoices.map((m) => `<option value="${m}"${m === moveInDefault ? " selected" : ""}>${monthLabel(m)}</option>`).join("")}</select></div>
+          <div class="field"><label for="mi-rent">Rent (Rs)</label><input type="number" id="mi-rent" value="${f.rent ?? 0}"${d}></div>
+          <div class="field"><label for="mi-water">Water (Rs)</label><input type="number" id="mi-water" value="${f.water ?? 0}"${d}></div>
+          ${f.hasMeter !== false ? `<div class="field"><label for="mi-reading">Meter reading on move-in</label><input type="number" id="mi-reading" placeholder="Blank to use last reading"${d}></div>` : ""}
+        </div>
+        ${o ? `<p class="hint">${esc(o.name)} will be recorded as leaving the month before.</p>` : ""}
+        <div><button class="btn primary" type="submit"${d}>Record move-in</button></div>
+      </form>
+      <div class="card">
+        <h3>Flat details</h3>
+        <div class="grid2">
+          <div class="field"><label for="f-label">Flat name or number</label><input type="text" id="f-label" data-ff="label" value="${esc(flatName(f))}"${d}></div>
+          <div class="field"><label for="f-type">Type</label><input type="text" id="f-type" data-ff="unitType" value="${esc(f.unitType || "")}"${d}></div>
+          <div class="field"><label for="f-rent">Rent (Rs)</label><input type="number" id="f-rent" data-ff="rent" value="${f.rent ?? 0}"${d}></div>
+          <div class="field"><label for="f-water">Water (Rs)</label><input type="number" id="f-water" data-ff="water" value="${f.water ?? 0}"${d}></div>
+          <div class="field"><label for="f-rate">Rate (Rs/unit)</label><input type="number" id="f-rate" data-ff="rate" step="0.5" value="${f.rate ?? 0}"${d}></div>
+          <div class="field"><label for="f-meter">Meter</label><select id="f-meter" data-ff="hasMeter"${d}><option value="yes"${f.hasMeter !== false ? " selected" : ""}>Yes</option><option value="no"${f.hasMeter === false ? " selected" : ""}>No</option></select></div>
+        </div>
+        <p class="hint">Rent, water and rate here are used from the next month you start. To change this month's bill, open the bill.</p>
+      </div>
+    </aside>`;
+  }
+
+  // ---------- writes ----------
+  async function write(fn, okMsg) {
+    if (!S.db) return false;
+    try { await fn(); if (okMsg) toast(okMsg); return true; }
+    catch (e) {
+      if (e && e.code === "invalid_argument" && S.canWrite === null) { S.canWrite = false; render(); toast("You can view this ledger but not change it."); return false; }
+      toast(e && e.code === "quota_exceeded" ? "The ledger storage is full." : "That change didn't save. Try again.");
+      return false;
+    }
+  }
+  const billRef = (id) => S.db.collection("bills").doc(id);
+  const flatRef = (id) => S.db.collection("flats").doc(id);
+
+  async function startNextMonth() {
+    const from = latest(), to = nextMonth(from);
+    if (S.month !== from) { toast("Switch to " + monthLabel(from) + " first."); return; }
+    let n = 0;
+    await write(async () => {
+      for (const f of flatsSorted()) {
+        const occ = occupantFor(f, to);
+        if (!occ) continue;
+        const pb = S.bills[from + "_" + f._id];
+        const same = pb && pb.tenantName === occ.name;
+        const reading = pb ? num(pb.currReading) ?? num(pb.prevReading) : num(f.lastReading);
+        await billRef(to + "_" + f._id).set(newBill(f, to, occ.name, same ? calc(pb).balance : 0, reading));
+        n++;
+      }
+      await S.db.doc("meta/ledger").update({ months: [...S.months, to] });
+      S.month = to; subscribeBills();
+    }, `${monthLabel(to)} started: ${n} bills`);
+    S.confirmNext = false; S.open = null; renderSheet();
+  }
+
+  async function lastReadingOf(f, beforeMonth) {
+    const prior = S.flatHist.filter((b) => b.month < beforeMonth).sort((a, b) => (a.month < b.month ? 1 : -1))[0];
+    return prior ? num(prior.currReading) ?? num(prior.prevReading) : num(f.lastReading);
+  }
+
+  async function moveOut(f, last) {
+    const occs = (f.occupants || []).map((o) => ({ ...o }));
+    const o = occs[occs.length - 1]; if (!o || o.to) return;
+    o.to = last;
+    const later = S.flatHist.filter((b) => b.month > last && b.tenantName === o.name);
+    const keep = later.filter((b) => (b.payments || []).length);
+    await write(async () => {
+      await flatRef(f._id).update({ occupants: occs });
+      for (const b of later) if (!(b.payments || []).length) await billRef(b._id).delete();
+    }, `${o.name} moves out after ${monthLabel(last)}`);
+    if (keep.length) toast(`Kept ${keep.length} later bill(s) for ${o.name} because they have payments.`);
+  }
+
+  async function moveIn(f, name, phone, startDate, from, rent, water, reading, deposit) {
+    const occs = (f.occupants || []).map((o) => ({ ...o }));
+    const cur = occs[occs.length - 1];
+    if (cur && (!cur.to || cur.to >= from)) {
+      if (cur.from >= from) { toast(`${cur.name} started in ${monthLabel(cur.from)}. Pick a later month.`); return; }
+      cur.to = prevMonth(from);
+    }
+    occs.push({ name, phone, deposit, startDate: startDate || from + "-01", from, to: null });
+    const startReading = reading ?? (await lastReadingOf(f, from));
+    await write(async () => {
+      await flatRef(f._id).update({ occupants: occs, rent, water, ...(reading !== null ? { lastReading: reading } : {}) });
+      // Replace bills from the move-in month onward that still carry the old tenant and have no payments.
+      for (const b of S.flatHist.filter((b) => b.month >= from && b.tenantName !== name && !(b.payments || []).length)) await billRef(b._id).delete();
+      if (S.months.includes(from)) {
+        const id = from + "_" + f._id, existing = S.flatHist.find((b) => b._id === id);
+        if (!existing || !(existing.payments || []).length) await billRef(id).set(newBill({ ...f, rent, water }, from, name, 0, startReading));
+      }
+    }, `${name} moves in from ${monthLabel(from)}`);
+  }
+
+  function exportCsv() {
+    const head = ["Month", "Flat", "Type", "Tenant", "Previous balance", "Previous reading", "Current reading", "Units", "Rate (Rs/unit)", "Electricity", "Rent", "Water", "Other", "Total amount", "Paid", "Balance carried forward"];
+    const q = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const rows = billsSorted().map((b) => { const c = calc(b), f = S.flats[b.flatId]; return [monthLabel(b.month), flatName(f), f?.unitType, b.tenantName, c.prevBalance, c.hasMeter ? b.prevReading : "", c.hasMeter ? b.currReading ?? "" : "", c.hasMeter ? c.units : "", c.rate, c.electricity, c.rent, c.water, c.other, c.total, c.paid, c.balance]; });
+    return [head, ...rows].map((r) => r.map(q).join(",")).join("\n");
+  }
+
+  // ---------- events ----------
+  function openBill(id) { closeHist(); S.open = { kind: "bill", id }; renderSheet(); }
+  function openFlat(id) {
+    closeHist(); S.open = { kind: "flat", id }; S.flatHist = []; renderSheet();
+    S.unsubHist = S.db.collection("bills").where("flatId", "==", id).onSnapshot((snap) => { S.flatHist = snap.docs.map((d) => ({ ...d.data(), _id: d.id })); renderSheet(); }, () => {});
+  }
+  function closeHist() { if (S.unsubHist) { S.unsubHist(); S.unsubHist = null; } S.flatHist = []; }
+  function closeSheet() { closeHist(); S.open = null; S.confirmNext = false; S.confirmErase = false; renderSheet(); }
+
+  document.addEventListener("click", async (e) => {
+    if (e.target.closest("a")) return;
+    const el = e.target.closest("button, [data-bill], [data-flat], [data-close]");
+    if (!el) return;
+    if (el.id === "tab-ledger") { S.view = "ledger"; render(); scrollTo(0, 0); }
+    else if (el.id === "tab-flats") { S.view = "flats"; render(); scrollTo(0, 0); }
+    else if (el.dataset.goflats) { S.view = "flats"; render(); scrollTo(0, 0); }
+    else if (el.dataset.filter) { S.filter = el.dataset.filter; render(); }
+    else if (el.dataset.openflat) { openFlat(el.dataset.openflat); }
+    else if (el.dataset.histmonth) { const m = el.dataset.histmonth, id = el.dataset.bill; if (S.month !== m) { S.month = m; subscribeBills(); render(); } closeHist(); S.open = { kind: "bill", id }; S.bills[id] = S.bills[id] || null; renderSheet(); }
+    else if (el.dataset.bill) { openBill(el.dataset.bill); }
+    else if (el.dataset.flat) { openFlat(el.dataset.flat); }
+    else if (el.dataset.close) { closeSheet(); }
+    else if (el.id === "btn-menu") { closeHist(); S.confirmNext = false; S.open = { kind: "menu" }; renderSheet(); }
+    else if (el.id === "btn-next") { S.confirmNext = true; renderSheet(); }
+    else if (el.id === "btn-next-no") { S.confirmNext = false; renderSheet(); }
+    else if (el.id === "btn-next-yes") { el.disabled = true; await startNextMonth(); }
+    else if (el.id === "btn-copy") {
+      const text = $("billtext").textContent;
+      try { await navigator.clipboard.writeText(text); toast("Bill copied"); }
+      catch { const r = document.createRange(); r.selectNodeContents($("billtext")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Bill selected. Copy it with your keyboard."); }
+    }
+    else if (el.dataset.delpay !== undefined) {
+      const b = S.bills[S.open.id]; const payments = (b.payments || []).filter((_, i) => i !== +el.dataset.delpay);
+      await write(() => billRef(b._id).update({ payments }), "Payment removed");
+    }
+    else if (el.id === "btn-export") { saveFile(`rent-ledger-${S.month}.csv`, "\ufeff" + exportCsv(), "text/csv"); }
+    else if (el.dataset.welcome) { S.welcome = true; closeSheet(); render(); scrollTo(0, 0); }
+    else if (el.id === "btn-welcome-cancel") { S.welcome = false; render(); }
+    else if (el.id === "btn-template") { downloadTemplate(); }
+    else if (el.id === "btn-sample") { startFresh(sampleDocs(), "Sample building loaded"); }
+    else if (el.id === "btn-empty") { const b = $("im-building").value.trim() || "My building"; startFresh({ "meta/ledger": { building: b, months: [$("im-month").value || today().slice(0, 7)], createdAt: today() } }, b + " created. Add your flats here."); S.view = "flats"; render(); }
+    else if (el.id === "btn-backup") { saveFile(`rent-ledger-backup-${today()}.json`, JSON.stringify({ app: "rent-ledger", version: 1, exportedAt: new Date().toISOString(), data: Store.dump() }), "application/json"); }
+    else if (el.id === "btn-restore" || el.id === "btn-restore-w") { $("restore-file").click(); }
+    else if (el.id === "btn-erase") { S.confirmErase = true; renderSheet(); }
+    else if (el.id === "btn-erase-no") { S.confirmErase = false; renderSheet(); }
+    else if (el.id === "btn-erase-yes") { startFresh({}, "All data erased"); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.matches("[data-bill]")) e.target.click();
+    if (e.key === "Enter" && e.target.matches("[data-flat]")) openFlat(e.target.dataset.flat);
+    if (e.key === "Escape" && S.open) closeSheet();
+  });
+  document.addEventListener("change", async (e) => {
+    const el = e.target;
+    if (el.id === "restore-file") {
+      const file = el.files[0]; el.value = ""; if (!file) return;
+      try { const j = JSON.parse(await file.text()); if (j.app !== "rent-ledger" || !j.data || !j.data["meta/ledger"]) throw 0; startFresh(j.data, "Backup restored"); }
+      catch { toast("That file isn't a Rent Ledger backup."); }
+      return;
+    }
+    if (el.id === "m-building") { const v = el.value.trim(); if (v && S.meta) await write(() => Store.doc("meta/ledger").update({ building: v }), "Building name saved"); return; }
+    if (el.id === "month-select") { S.month = el.value; closeSheet(); S.filter = "all"; subscribeBills(); render(); return; }
+    if (el.dataset.bf && S.open?.kind === "bill") {
+      const f = el.dataset.bf, b = S.bills[S.open.id];
+      const v = f === "adjustmentLabel" ? el.value.trim() : num(el.value);
+      if (v === (b[f] ?? null)) return;
+      await write(() => billRef(b._id).update({ [f]: f === "currReading" || f === "prevReading" || f === "adjustmentLabel" ? v : v ?? 0 }), "Saved");
+      return;
+    }
+    if (el.id === "f-deposit") {
+      const f = S.flats[S.open.id], target = currentOccupant(f); if (!target) return;
+      const occupants = (f.occupants || []).map((o) => (o === target ? { ...o, deposit: num(el.value) } : o));
+      await write(() => flatRef(f._id).update({ occupants }), "Security deposit saved");
+      return;
+    }
+    if (el.id === "f-start") {
+      const f = S.flats[S.open.id], target = currentOccupant(f); if (!target) return;
+      const occupants = (f.occupants || []).map((o) => (o === target ? { ...o, startDate: el.value || null } : o));
+      await write(() => flatRef(f._id).update({ occupants }), "Start date saved");
+      return;
+    }
+    if (el.id === "b-phone" || el.id === "f-phone") {
+      const f = S.flats[el.id === "b-phone" ? S.bills[S.open.id]?.flatId : S.open.id]; if (!f) return;
+      const target = el.id === "b-phone" ? occupantOfBill(S.bills[S.open.id]) : currentOccupant(f); if (!target) return;
+      const occupants = (f.occupants || []).map((o) => (o === target ? { ...o, phone: cleanPhone(el.value) } : o));
+      await write(() => flatRef(f._id).update({ occupants }), "WhatsApp number saved");
+      return;
+    }
+    if (el.dataset.ff && S.open?.kind === "flat") {
+      const f = el.dataset.ff; let v = el.value;
+      if (["rent", "water", "rate"].includes(f)) v = num(v) ?? 0;
+      if (f === "hasMeter") v = v === "yes";
+      if (f === "label" || f === "unitType") v = v.trim();
+      await write(() => flatRef(S.open.id).update({ [f]: v }), "Flat updated");
+    }
+  });
+  document.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = e.target.id;
+    if (id === "import-form") {
+      if (!needXlsx()) return;
+      const file = $("im-file").files[0]; if (!file) return;
+      $("im-result").textContent = "Reading the sheet…";
+      try {
+        const r = buildFromRows(await readRows(file), $("im-building").value.trim(), $("im-month").value || today().slice(0, 7));
+        startFresh(r.docs, `${r.flats} flats and ${r.tenants} tenants loaded for ${monthLabel(r.month)}`);
+        e.target.reset(); $("im-result").textContent = "";
+      } catch (err) { $("im-result").textContent = err?.message || "Couldn't read that file. Save it as .xlsx or .csv and try again."; }
+      return;
+    }
+    if (id === "pay-form") {
+      const b = S.bills[S.open.id]; const amount = num($("pay-amount").value);
+      if (!amount || amount <= 0) { toast("Enter an amount above zero."); return; }
+      const payments = [...(b.payments || []), { amount, date: $("pay-date").value || today(), mode: $("pay-mode").value, note: $("pay-note").value.trim() }];
+      await write(() => billRef(b._id).update({ payments }), rs(amount) + " recorded");
+    }
+    if (id === "rev-form") {
+      const f = S.flats[S.open.id], target = currentOccupant(f), due = nextRevision(target), to = num($("rev-rent").value);
+      if (!target || !due || to === null) return;
+      const occupants = (f.occupants || []).map((o) => (o === target ? { ...o, lastRevised: due, rentHistory: [...(o.rentHistory || []), { date: today(), due, from: f.rent ?? 0, to }] } : o));
+      await write(() => flatRef(f._id).update({ occupants, rent: to }), `Rent for ${target.name} is now ${rs(to)}`);
+    }
+    if (id === "moveout-form") await moveOut(S.flats[S.open.id], $("mo-month").value);
+    if (id === "movein-form") {
+      const name = $("mi-name").value.trim(); if (!name) return;
+      await moveIn(S.flats[S.open.id], name, cleanPhone($("mi-phone").value), $("mi-start").value, $("mi-from").value, num($("mi-rent").value) ?? 0, num($("mi-water").value) ?? 0, $("mi-reading") ? num($("mi-reading").value) : null, num($("mi-deposit").value));
+    }
+    if (id === "add-flat") {
+      const label = $("nf-label").value.trim(); if (!label) return;
+      const nos = Object.values(S.flats).map((f) => f.no || 0);
+      const no = (nos.length ? Math.max(...nos) : 0) + 1;
+      const fid = "f" + String(no).padStart(2, "0") + "-" + Math.random().toString(36).slice(2, 6);
+      const reading = num($("nf-reading").value), tenant = $("nf-tenant").value.trim(), from = $("nf-from").value;
+      const f = { _id: fid, no, label, unitType: $("nf-type").value.trim(), rent: num($("nf-rent").value) ?? 0, water: num($("nf-water").value) ?? 0, rate: num($("nf-rate").value) ?? 8, hasMeter: reading !== null, lastReading: reading, occupants: tenant ? [{ name: tenant, phone: cleanPhone($("nf-phone").value), deposit: num($("nf-deposit").value), startDate: $("nf-start").value || from + "-01", from, to: null }] : [] };
+      const { _id, ...doc } = f;
+      const ok = await write(async () => {
+        await flatRef(fid).set(doc);
+        if (tenant && S.months.includes(from)) await billRef(from + "_" + fid).set(newBill(f, from, tenant, 0, reading));
+        if (!S.months.length) await S.db.doc("meta/ledger").set({ ...(S.meta || { building: "My building" }), months: [from] });
+      }, label + " added");
+      if (ok) e.target.reset();
+    }
+  });
+
+  // ---------- data ----------
+  function subscribeBills() {
+    if (S.unsubBills) S.unsubBills();
+    S.bills = {}; S.ready.bills = false;
+    if (!S.month) { S.ready.bills = true; return; }
+    S.unsubBills = S.db.collection("bills").where("month", "==", S.month).onSnapshot((snap) => {
+      S.bills = Object.fromEntries(snap.docs.map((d) => [d.id, { ...d.data(), _id: d.id }]));
+      S.ready.bills = true; render();
+    }, () => { $("status").textContent = "The ledger stopped updating. Reload the page."; $("status").hidden = false; });
+  }
+
+  // ---------- local store ----------
+  // Same shape as the hosted document store the page was first built on: doc paths like "flats/f01",
+  // collections queried with where(field, "==", value). Everything lives in this browser's localStorage.
+  const Store = (() => {
+    const KEY = "rentledger.v1";
+    const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+    let data = {}, ok = true;
+    try { data = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch { ok = false; }
+    const listeners = new Set();
+    const fire = () => listeners.forEach((l) => { try { l(); } catch (e) { console.error(e); } });
+    function save() {
+      try { localStorage.setItem(KEY, JSON.stringify(data)); ok = true; } catch { ok = false; toast("This browser didn't save that change. Download a backup from the ⋯ menu."); }
+      fire();
+    }
+    window.addEventListener("storage", (e) => { if (e.key === KEY) { try { data = JSON.parse(e.newValue || "{}") || {}; } catch {} fire(); } });
+    const snapDoc = (path) => { const v = data[path]; return { id: path.split("/").pop(), exists: !!v, data: () => clone(v), metadata: {} }; };
+    function doc(path) {
+      return {
+        id: path.split("/").pop(), path,
+        get: async () => snapDoc(path),
+        set: async (v) => { data[path] = clone(v); save(); },
+        update: async (v) => { if (!data[path]) throw { code: "invalid_argument", message: "missing" }; data[path] = { ...data[path], ...clone(v) }; save(); },
+        delete: async () => { delete data[path]; save(); },
+        onSnapshot(next) { const l = () => next(snapDoc(path)); listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l); },
+        collection: (c) => collection(path + "/" + c),
+      };
+    }
+    function collection(path, filters = []) {
+      const depth = path.split("/").length + 1;
+      const qs = () => {
+        const docs = Object.keys(data).filter((k) => k.startsWith(path + "/") && k.split("/").length === depth && filters.every(([f, v]) => data[k][f] === v)).sort().map(snapDoc);
+        return { docs, size: docs.length, empty: !docs.length, docChanges: () => [], metadata: {} };
+      };
+      return {
+        path,
+        where: (f, op, v) => collection(path, [...filters, [f, v]]),
+        doc: (id) => doc(path + "/" + (id || Math.random().toString(36).slice(2, 10))),
+        get: async () => qs(),
+        onSnapshot(next) { const l = () => next(qs()); listeners.add(l); setTimeout(l, 0); return () => listeners.delete(l); },
+      };
+    }
+    return {
+      doc, collection,
+      dump: () => clone(data),
+      replaceAll: (obj) => { data = clone(obj) || {}; save(); },
+      isSaving: () => ok,
+    };
+  })();
+
+  // ---------- files ----------
+  function saveFile(name, content, type) {
+    const blob = content instanceof Blob ? content : new Blob([content], { type: type || "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  const needXlsx = () => { if (!window.XLSX) { toast("The spreadsheet reader is still loading. Check your connection and try again."); return false; } return true; };
+
+  const TEMPLATE_HEADERS = ["Flat", "Type", "Tenant name", "WhatsApp number", "Start date", "Security deposit", "Rent", "Water", "Electricity rate (Rs/unit)", "Previous reading", "Current reading", "Previous balance", "Paid this month"];
+  function downloadTemplate() {
+    if (!needXlsx()) return;
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS,
+      ["101", "2 BHK", "Example tenant (delete this row)", "9876543210", "2025-11-01", 20000, 8000, 200, 8, 1200, 1320, 0, 0],
+      ["102", "1 BHK", "", "", "", "", 5500, 0, 8, 640, "", 0, 0]]);
+    ws["!cols"] = TEMPLATE_HEADERS.map((h) => ({ wch: Math.max(12, h.length + 2) }));
+    XLSX.utils.book_append_sheet(wb, ws, "Flats");
+    const help = XLSX.utils.aoa_to_sheet([
+      ["How to fill this sheet"], [""],
+      ["One row per flat. Only Flat and Rent are required."],
+      ["Leave Tenant name blank for a vacant flat."],
+      ["WhatsApp number: 10-digit mobile number. +91 is added for you."],
+      ["Start date: the date the tenant moved in (used for yearly rent increase reminders)."],
+      ["Previous reading / Current reading: this month's meter readings. Leave both blank if the flat has no meter."],
+      ["Previous balance: amount still owed from earlier months. Use a minus number if the tenant paid extra."],
+      ["Paid this month: anything already received for this month."],
+      ["Delete the example rows before uploading."]]);
+    help["!cols"] = [{ wch: 100 }];
+    XLSX.utils.book_append_sheet(wb, help, "Instructions");
+    XLSX.writeFile(wb, "rent-ledger-template.xlsx");
+  }
+
+  // ---------- sheet import ----------
+  function colKey(h) {
+    const raw = String(h).trim();
+    if (raw === "#" || /^(s\.?\s*no|sr\.?\s*no|sl\.?\s*no)\.?$/i.test(raw)) return "no";
+    const n = raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (/\b(prev|previous|last|old|opening) (meter )?reading\b|^opening\b/.test(n)) return "prevReading";
+    if (/\b(curr|current|new|this month|closing) (meter )?reading\b|^closing\b/.test(n)) return "currReading";
+    if (/\brate\b|per unit/.test(n)) return "rate";
+    if (/\b(prev|previous|old) (balance|dues?)\b|\barrears?\b|^opening balance/.test(n)) return "prevBalance";
+    if (/whatsapp|phone|mobile|contact/.test(n)) return "phone";
+    if (/security|deposit/.test(n)) return "deposit";
+    if (/\bstart\b|move in|joining|since|agreement date/.test(n)) return "startDate";
+    if (/\btype\b|\bbhk\b|configuration/.test(n)) return "unitType";
+    if (/\bflat\b|\bunit (no|number)\b|\broom\b|\bhouse\b|\bdoor\b/.test(n)) return "flat";
+    if (/tenant|\bname\b/.test(n)) return "tenant";
+    if (/\bwater\b/.test(n)) return "water";
+    if (/\brent\b/.test(n)) return "rent";
+    if (/^paid\b|amount paid|received/.test(n)) return "paid";
+    if (/^month\b|billing month/.test(n)) return "month";
+    return null;
+  }
+  const parseNum = (v) => { if (v === "" || v === null || v === undefined) return null; if (typeof v === "number") return v; const s = String(v).replace(/[₹,\s]|rs\.?/gi, ""); return s === "" || isNaN(+s) ? null : +s; };
+  function parseDate(v) {
+    if (v === "" || v == null) return null;
+    if (v instanceof Date && !isNaN(v)) return isoDate(new Date(v.getTime() + 12 * 3600 * 1000));
+    if (typeof v === "number" && v > 20000 && v < 80000) return isoDate(new Date(Math.round((v - 25569) * 86400 * 1000) + 12 * 3600 * 1000));
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/); if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+    m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/); if (m) { const y = m[3].length === 2 ? "20" + m[3] : m[3]; return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; }
+    const d = new Date(s); return isNaN(d) ? null : isoDate(d);
+  }
+  function parseMonth(v) {
+    if (v === "" || v == null) return null;
+    if (v instanceof Date || typeof v === "number") { const d = parseDate(v); return d && d.slice(0, 7); }
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})[-/](\d{1,2})$/); if (m) return `${m[1]}-${m[2].padStart(2, "0")}`;
+    const d = new Date("1 " + s); if (!isNaN(d)) return isoDate(d).slice(0, 7);
+    const d2 = parseDate(s); return d2 && d2.slice(0, 7);
+  }
+
+  async function readRows(file) {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+    const name = wb.SheetNames.find((n) => !/instruction|help|read ?me/i.test(n)) || wb.SheetNames[0];
+    return XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: "", raw: true });
+  }
+
+  // Turns sheet rows into flats, bills and the ledger record. Returns {docs, flats, tenants, month, skipped}.
+  function buildFromRows(rows, building, formMonth) {
+    if (!rows.length) throw new Error("The sheet is empty.");
+    const keys = {};
+    Object.keys(rows[0]).forEach((h) => { const k = colKey(h); if (k && !(k in keys)) keys[k] = h; });
+    if (!keys.rent) throw new Error('Couldn\'t find a "Rent" column. Use the template, or name your columns like Flat, Tenant name, Rent.');
+    const get = (r, k) => (keys[k] ? r[keys[k]] : "");
+    const sheetMonth = rows.map((r) => parseMonth(get(r, "month"))).find(Boolean);
+    const month = sheetMonth || formMonth;
+    const docs = { "meta/ledger": { building: building || "My building", months: [month], createdAt: today() } };
+    let n = 0, tenants = 0, skipped = 0;
+    rows.forEach((r) => {
+      const tenant = String(get(r, "tenant") || "").trim();
+      const flatRaw = String(get(r, "flat") || "").trim(), noRaw = String(get(r, "no") || "").trim();
+      const rent = parseNum(get(r, "rent"));
+      if (/^total/i.test(tenant) || /^total/i.test(flatRaw) || (!flatRaw && !noRaw && !tenant) || /example tenant/i.test(tenant)) { skipped++; return; }
+      n++;
+      const label = flatRaw ? (/^\d+[a-z]?$/i.test(flatRaw) ? "Flat " + flatRaw : flatRaw) : noRaw ? "Flat " + noRaw : "Flat " + n;
+      const prevReading = parseNum(get(r, "prevReading")), currReading = parseNum(get(r, "currReading"));
+      const hasMeter = prevReading !== null || currReading !== null;
+      const fid = "f" + String(n).padStart(3, "0");
+      const occ = tenant ? [{ name: tenant, phone: cleanPhone(get(r, "phone")), deposit: parseNum(get(r, "deposit")), startDate: parseDate(get(r, "startDate")), from: month, to: null }] : [];
+      const flat = { no: n, label, unitType: String(get(r, "unitType") || "").trim(), rent: rent ?? 0, water: parseNum(get(r, "water")) ?? 0, rate: parseNum(get(r, "rate")) ?? 8, hasMeter, lastReading: prevReading, occupants: occ };
+      docs["flats/" + fid] = flat;
+      if (tenant) {
+        tenants++;
+        const paid = parseNum(get(r, "paid")) || 0;
+        docs["bills/" + month + "_" + fid] = { month, flatId: fid, tenantName: tenant, hasMeter, prevBalance: parseNum(get(r, "prevBalance")) ?? 0, prevReading: hasMeter ? prevReading : null, currReading: hasMeter ? currReading : null,
+          rate: flat.rate, rent: flat.rent, water: flat.water, adjustment: 0, adjustmentLabel: "", payments: paid > 0 ? [{ amount: paid, date: month + "-01", mode: "From sheet", note: "" }] : [] };
+      }
+    });
+    if (!n) throw new Error("Couldn't find any flats in the sheet. Check that the first row has the column names.");
+    return { docs, flats: n, tenants, month, skipped, usedSheetMonth: !!sheetMonth };
+  }
+
+  function sampleDocs() {
+    const m = today().slice(0, 7), pm = prevMonth(m);
+    const rows = [
+      ["101", "2 BHK", "Sample tenant A", 8000, 200, 4120, 4268, 0, 8000 + 200 + 148 * 8, addYears(today(), -1).slice(0, 8) + "05"],
+      ["102", "1 BHK", "Sample tenant B", 5500, 0, 1210, 1302, 450, 0, "2025-03-01"],
+      ["103", "2 BHK", "Sample tenant C", 7800, 200, 9033, 9150, 0, 4000, "2024-08-15"],
+      ["104", "3 BHK", "Sample tenant D", 14000, 300, null, null, 0, 0, "2026-01-10"],
+      ["105", "1 BHK", "", 5000, 0, 300, null, 0, 0, ""],
+      ["106", "2 BHK", "Sample tenant E", 7500, 200, 2210, 2398, -150, 0, "2025-07-01"],
+    ];
+    const docs = { "meta/ledger": { building: "Sample building", months: [pm, m], sample: true, createdAt: today() } };
+    rows.forEach(([no, type, name, rent, water, prev, curr, prevBal, paid, start], i) => {
+      const fid = "f" + String(i + 1).padStart(3, "0"), hasMeter = prev !== null;
+      docs["flats/" + fid] = { no: i + 1, label: "Flat " + no, unitType: type, rent, water, rate: 8, hasMeter, lastReading: prev, occupants: name ? [{ name, phone: "", deposit: rent * 2, startDate: start, from: pm, to: null }] : [] };
+      if (!name) return;
+      const units = hasMeter ? 110 + i * 7 : 0;
+      docs["bills/" + pm + "_" + fid] = { month: pm, flatId: fid, tenantName: name, hasMeter, prevBalance: 0, prevReading: hasMeter ? prev - units : null, currReading: hasMeter ? prev : null, rate: 8, rent, water, adjustment: 0, adjustmentLabel: "", payments: [{ amount: rent + water + units * 8 - prevBal, date: pm + "-05", mode: "UPI", note: "" }] };
+      docs["bills/" + m + "_" + fid] = { month: m, flatId: fid, tenantName: name, hasMeter, prevBalance: prevBal, prevReading: hasMeter ? prev : null, currReading: hasMeter ? curr : null, rate: 8, rent, water, adjustment: 0, adjustmentLabel: "", payments: paid ? [{ amount: paid, date: m + "-04", mode: "UPI", note: "" }] : [] };
+    });
+    return docs;
+  }
+
+  function startFresh(docs, msg) {
+    if (S.unsubBills) S.unsubBills();
+    S.month = null; S.filter = "all"; S.view = "ledger"; S.open = null; S.welcome = false; S.confirmErase = false;
+    Store.replaceAll(docs);
+    toast(msg); scrollTo(0, 0);
+  }
+
+  async function start() {
+    S.db = Store; S.canWrite = true;
+    try { navigator.storage?.persist?.(); } catch {}
+    Store.doc("meta/ledger").onSnapshot((snap) => {
+      S.meta = snap.exists ? snap.data() : null;
+      S.months = (S.meta && S.meta.months) || [];
+      if (!S.month || !S.months.includes(S.month)) { S.month = latest() || null; subscribeBills(); }
+      S.ready.meta = true; render();
+    });
+    Store.collection("flats").onSnapshot((snap) => {
+      S.flats = Object.fromEntries(snap.docs.map((d) => [d.id, { ...d.data(), _id: d.id }]));
+      S.ready.flats = true; render();
+    });
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+  start();
+})();
+</script>
+
+</body>
+</html>

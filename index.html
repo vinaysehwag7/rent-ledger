@@ -632,6 +632,7 @@ table.hist { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
         <h3>Tenants in this flat</h3>
         <div class="occ">${occ}</div>
         ${o ? `<div class="field"><label for="f-start">${esc(o.name)}'s start date</label><input type="date" id="f-start" value="${esc(o.startDate || "")}"${d}></div>` : ""}
+        ${o ? `<div class="field"><label for="f-revised">Last rent increase for ${esc(o.name)}</label><input type="date" id="f-revised" value="${esc(o.lastRevised || "")}"${d}><p class="hint">Leave blank if the rent hasn't gone up yet. The next reminder comes a year after this date.</p></div>` : ""}
         ${o ? `<div class="field"><label for="f-deposit">${esc(o.name)}'s security deposit (Rs)</label><input type="number" id="f-deposit" min="0" value="${o.deposit ?? ""}" placeholder="Amount paid"${d}></div>` : ""}
         ${o ? `<div class="field"><label for="f-phone">${esc(o.name)}'s WhatsApp number</label><input type="tel" id="f-phone" value="${esc(o.phone || "")}" placeholder="98765 43210"${d}></div>` : ""}
       </div>
@@ -833,6 +834,12 @@ table.hist { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
       await write(() => flatRef(f._id).update({ occupants }), "Security deposit saved");
       return;
     }
+    if (el.id === "f-revised") {
+      const f = S.flats[S.open.id], target = currentOccupant(f); if (!target) return;
+      const occupants = (f.occupants || []).map((o) => (o === target ? { ...o, lastRevised: el.value || null } : o));
+      await write(() => flatRef(f._id).update({ occupants }), "Last rent increase saved");
+      return;
+    }
     if (el.id === "f-start") {
       const f = S.flats[S.open.id], target = currentOccupant(f); if (!target) return;
       const occupants = (f.occupants || []).map((o) => (o === target ? { ...o, startDate: el.value || null } : o));
@@ -971,13 +978,13 @@ table.hist { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
   }
   const needXlsx = () => { if (!window.XLSX) { toast("The spreadsheet reader is still loading. Check your connection and try again."); return false; } return true; };
 
-  const TEMPLATE_HEADERS = ["Flat", "Type", "Tenant name", "WhatsApp number", "Start date", "Security deposit", "Rent", "Water", "Electricity rate (Rs/unit)", "Previous reading", "Current reading", "Previous balance", "Paid this month"];
+  const TEMPLATE_HEADERS = ["Flat", "Type", "Tenant name", "WhatsApp number", "Start date", "Last rent increase", "Security deposit", "Rent", "Water", "Electricity rate (Rs/unit)", "Previous reading", "Current reading", "Previous balance", "Paid this month"];
   function downloadTemplate() {
     if (!needXlsx()) return;
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS,
-      ["101", "2 BHK", "Example tenant (delete this row)", "9876543210", "2025-11-01", 20000, 8000, 200, 8, 1200, 1320, 0, 0],
-      ["102", "1 BHK", "", "", "", "", 5500, 0, 8, 640, "", 0, 0]]);
+      ["101", "2 BHK", "Example tenant (delete this row)", "9876543210", "2025-11-01", "", 20000, 8000, 200, 8, 1200, 1320, 0, 0],
+      ["102", "1 BHK", "", "", "", "", "", 5500, 0, 8, 640, "", 0, 0]]);
     ws["!cols"] = TEMPLATE_HEADERS.map((h) => ({ wch: Math.max(12, h.length + 2) }));
     XLSX.utils.book_append_sheet(wb, ws, "Flats");
     const help = XLSX.utils.aoa_to_sheet([
@@ -986,6 +993,7 @@ table.hist { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
       ["Leave Tenant name blank for a vacant flat."],
       ["WhatsApp number: 10-digit mobile number. +91 is added for you."],
       ["Start date: the date the tenant moved in (used for yearly rent increase reminders)."],
+      ["Last rent increase: the date the rent last went up. Leave blank if it hasn't. The next reminder comes a year after this date."],
       ["Previous reading / Current reading: this month's meter readings. Leave both blank if the flat has no meter."],
       ["Previous balance: amount still owed from earlier months. Use a minus number if the tenant paid extra."],
       ["Paid this month: anything already received for this month."],
@@ -1004,6 +1012,7 @@ table.hist { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
     if (/\b(curr|current|new|this month|closing) (meter )?reading\b|^closing\b/.test(n)) return "currReading";
     if (/\brate\b|per unit/.test(n)) return "rate";
     if (/\b(prev|previous|old) (balance|dues?)\b|\barrears?\b|^opening balance/.test(n)) return "prevBalance";
+    if (/\b(last|previous|prev) (rent )?(increase|increment|hike|revision|revised)\b|\brent (increased|revised|hike|increment)\b/.test(n)) return "lastRevised";
     if (/whatsapp|phone|mobile|contact/.test(n)) return "phone";
     if (/security|deposit/.test(n)) return "deposit";
     if (/\bstart\b|move in|joining|since|agreement date/.test(n)) return "startDate";
@@ -1062,7 +1071,7 @@ table.hist { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
       const prevReading = parseNum(get(r, "prevReading")), currReading = parseNum(get(r, "currReading"));
       const hasMeter = prevReading !== null || currReading !== null;
       const fid = "f" + String(n).padStart(3, "0");
-      const occ = tenant ? [{ name: tenant, phone: cleanPhone(get(r, "phone")), deposit: parseNum(get(r, "deposit")), startDate: parseDate(get(r, "startDate")), from: month, to: null }] : [];
+      const occ = tenant ? [{ name: tenant, phone: cleanPhone(get(r, "phone")), deposit: parseNum(get(r, "deposit")), startDate: parseDate(get(r, "startDate")), lastRevised: parseDate(get(r, "lastRevised")), from: month, to: null }] : [];
       const flat = { no: n, label, unitType: String(get(r, "unitType") || "").trim(), rent: rent ?? 0, water: parseNum(get(r, "water")) ?? 0, rate: parseNum(get(r, "rate")) ?? 8, hasMeter, lastReading: prevReading, occupants: occ };
       docs["flats/" + fid] = flat;
       if (tenant) {
